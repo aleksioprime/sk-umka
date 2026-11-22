@@ -21,6 +21,7 @@ const devDebugData = document.getElementById("dev-debug-data");
 const DEV_MODE_KEY = "umka-dev-mode";
 const DEV_DEBUG_KEY = "umka-dev-debug";
 const DEV_MODE_IDLE_MS = 15 * 60 * 1000;
+const DEV_TAP_MAX_GAP_MS = 500;
 let devModeTimer = null;
 const originalUrl = "https://умка.москва/#top";
 const encodedUrl = encodeURI(originalUrl);
@@ -47,7 +48,8 @@ let activeAnimationTimeout = null;
 let isRandomAnimationActive = false;
 let isTouching = false;
 let avoidTimeout = null;
-let exitTapTimes = [];
+let devTapCount = 0;
+let lastDevTapAt = null;
 // Без подтверждения результат показывается resultSeconds, затем экран гаснет.
 let resultEventId = null;
 let resultTimer = null;
@@ -96,18 +98,9 @@ document.addEventListener("DOMContentLoaded", () => {
   scheduleIdleAnimation();
 
   faceContainer.addEventListener("click", handleFaceTouch);
-  faceContainer.addEventListener("click", registerDevModeTap);
-  faceContainer.addEventListener(
-    "touchstart",
-    (e) => {
-      e.preventDefault();
-      registerDevModeTap();
-      handleFaceTouch(e);
-    },
-    { passive: false },
-  );
+  document.getElementById("umka-logo").addEventListener("click", registerDevModeTap);
 
-  // kiosk_token нужен кнопке «Закрыть экран», поэтому служебные ссылки его сохраняют.
+  // kiosk_token нужен для выхода из программы, поэтому служебные ссылки его сохраняют.
   for (const link of document.querySelectorAll("[data-keep-query]")) {
     const url = new URL(link.getAttribute("href"), window.location.href);
     url.search = window.location.search;
@@ -117,8 +110,8 @@ document.addEventListener("DOMContentLoaded", () => {
   exitCancel.addEventListener("click", hideExitDialog);
   exitConfirm.addEventListener("click", requestKioskExit);
 
-  document.getElementById("dev-exit").addEventListener("click", () => setDevMode(false));
-  document.getElementById("dev-close-screen").addEventListener("click", showExitDialog);
+  document.getElementById("dev-back").addEventListener("click", () => setDevMode(false));
+  document.getElementById("dev-exit").addEventListener("click", showExitDialog);
   document.getElementById("dev-debug").addEventListener("click", () => {
     setDevDebug(devDebugPanel.hidden);
   });
@@ -157,7 +150,7 @@ function setDevMode(enabled) {
   if (enabled) {
     storageSet(DEV_MODE_KEY, String(Date.now() + DEV_MODE_IDLE_MS));
     devModeTimer = setTimeout(() => setDevMode(false), DEV_MODE_IDLE_MS);
-    if (changed) document.getElementById("dev-settings").focus();
+    if (changed) document.getElementById("dev-back").focus();
   } else {
     storageSet(DEV_MODE_KEY, null);
     setDevDebug(false);
@@ -212,20 +205,23 @@ function renderDevDebug(data) {
   ].filter(Boolean).join("\n");
 }
 
-// Пять касаний логотипа за четыре секунды включают режим разработчика.
+// После паузы следующее касание становится первым в новой серии.
 function registerDevModeTap() {
-  const now = Date.now();
-  exitTapTimes = exitTapTimes.filter((timestamp) => now - timestamp <= 4000);
-  exitTapTimes.push(now);
-  if (exitTapTimes.length >= 5) {
-    exitTapTimes = [];
+  const now = performance.now();
+  if (lastDevTapAt === null || now - lastDevTapAt > DEV_TAP_MAX_GAP_MS) devTapCount = 0;
+  lastDevTapAt = now;
+  devTapCount += 1;
+  if (devTapCount === 5) {
+    devTapCount = 0;
+    lastDevTapAt = null;
     setDevMode(true);
   }
 }
 
 function showExitDialog() {
-  exitMessage.textContent = "Программа сортировки продолжит работать в фоне.";
+  exitMessage.textContent = "УМКА остановит сортировку и закроет окно.";
   exitConfirm.disabled = false;
+  devPanel.inert = true;
   exitOverlay.classList.add("active");
   exitCancel.focus();
 }
@@ -233,18 +229,19 @@ function showExitDialog() {
 function hideExitDialog() {
   const wasOpen = exitOverlay.classList.contains("active");
   exitOverlay.classList.remove("active");
-  if (wasOpen && !devPanel.hidden) document.getElementById("dev-close-screen").focus();
+  devPanel.inert = false;
+  if (wasOpen && !devPanel.hidden) document.getElementById("dev-exit").focus();
 }
 
 async function requestKioskExit() {
   const token = new URLSearchParams(window.location.search).get("kiosk_token");
   if (!token) {
     exitMessage.textContent =
-      "Экран открыт не через ярлык UMKA. Закройте Chromium через Alt+F4 или по SSH.";
+      "Выйти из программы можно на экране самой УМКИ.";
     return;
   }
   exitConfirm.disabled = true;
-  exitMessage.textContent = "Закрываю экран...";
+  exitMessage.textContent = "Завершаю работу УМКИ…";
   try {
     const response = await fetch(
       `http://127.0.0.1:3001/exit?token=${encodeURIComponent(token)}`,
@@ -254,9 +251,9 @@ async function requestKioskExit() {
     );
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   } catch (error) {
-    console.error("Не удалось закрыть kiosk:", error);
+    console.error("Не удалось завершить работу УМКИ:", error);
     exitMessage.textContent =
-      "Не удалось закрыть экран. Используйте Alt+F4 или SSH.";
+      "Не удалось завершить работу. Попробуйте ещё раз или остановите УМКУ через manager.";
     exitConfirm.disabled = false;
   }
 }

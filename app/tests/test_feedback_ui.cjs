@@ -44,6 +44,9 @@ function setup() {
   let timerId = 0;
   let now = 0;
   const context = vm.createContext({
+    performance: { now: () => now },
+    window: { location: { search: "?kiosk_token=test-token" } },
+    URLSearchParams,
     document: {
       getElementById: get,
       querySelector: (selector) => selector.startsWith(".page-") ? page : get(selector),
@@ -273,4 +276,44 @@ test("five logo taps turn on developer mode, exit and idle timeout turn it off",
   ui.run("setDevMode(true)");
   ui.advance(15 * 60 * 1000);
   assert.equal(panel.hidden, true, "mode switches off after 15 idle minutes");
+});
+
+test("a pause resets the five-tap sequence", () => {
+  const ui = setup();
+  const panel = ui.get("dev-panel");
+  panel.hidden = true;
+  const tap = (delay) => {
+    ui.advance(delay);
+    ui.run("registerDevModeTap()");
+  };
+  tap(0);
+  tap(150);
+  tap(150);
+  tap(150);
+  tap(501);
+  assert.equal(panel.hidden, true, "the tap after the pause starts a new sequence");
+  for (let count = 0; count < 3; count += 1) tap(150);
+  assert.equal(panel.hidden, true);
+  tap(500);
+  assert.equal(panel.hidden, false);
+});
+
+test("cancelling the exit leaves the menu open and sends no stop request", async () => {
+  const ui = setup();
+  const panel = ui.get("dev-panel");
+  ui.run("setDevMode(true); showExitDialog()");
+  assert.equal(panel.inert, true);
+  assert.equal(ui.get("exit-overlay").classList.contains("active"), true);
+  ui.run("hideExitDialog()");
+  assert.equal(panel.hidden, false);
+  assert.equal(panel.inert, false);
+  assert.equal(ui.get("exit-overlay").classList.contains("active"), false);
+  assert.equal(ui.requests.length, 0);
+
+  ui.run("showExitDialog()");
+  ui.responses.push({ ok: true });
+  await ui.run("requestKioskExit()");
+  assert.equal(ui.requests.length, 1);
+  assert.equal(ui.requests[0].options.method, "POST");
+  assert.equal(ui.requests[0].url, "http://127.0.0.1:3001/exit?token=test-token");
 });

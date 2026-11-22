@@ -2,10 +2,10 @@
 Type=Application
 Version=1.0
 Name=Запустить UMKA
-Comment=Запустить распознавание и сортировку; параметры - в umka.conf
-Exec=@APP_DIR@/.venv/bin/python @APP_DIR@/app.py
+Comment=Запустить сортировку и открыть экран УМКИ
+Exec=/usr/bin/python3 @APP_DIR@/kiosk_launcher.py --start
 Path=@APP_DIR@
-Icon=utilities-terminal
-Terminal=true
+Icon=web-browser
+Terminal=false
 StartupNotify=false
 Categories=Utility;

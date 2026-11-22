@@ -19,6 +19,7 @@ from .manual_capture import usb_volumes
 from .display_settings import DisplaySettings
 from .event_journal import EventJournal
 from .hardware import create_hardware
+from .local_stop import LocalStop
 from .preview import FramePreview
 from .screen import ScreenManager
 from .state import StateStore
@@ -114,6 +115,7 @@ class UmkaApplication:
         # ячейки достаточно и очередь не может бесконтрольно расти.
         self.sort_queue: queue.Queue = queue.Queue(maxsize=1)
         self.stop_event = threading.Event()
+        self.local_stop = LocalStop(self.stop_event) if config.web_port == 3000 else None
         self.sort_thread = None
 
     def _select_model(self, body):
@@ -331,9 +333,11 @@ class UmkaApplication:
         self.config.validate()
         calibration.load(self.config.calibration_path)
         self.web.start()
-        self.screen.start()
-        self.telemetry.start()
         try:
+            if self.local_stop is not None:
+                self.local_stop.start()
+            self.screen.start()
+            self.telemetry.start()
             # Сервер запускается первым, чтобы на странице были видны ошибки
             # последующей инициализации модели, GPIO или камеры.
             with self.mode_lock:
@@ -377,6 +381,8 @@ class UmkaApplication:
         sequence = 0
         while not self.stop_event.is_set():
             sequence, frame = self.camera.next_frame(sequence)
+            if self.stop_event.is_set():
+                break
             if frame is None:
                 message = self.camera.error or "Таймаут ожидания кадра"
                 self.state.update_component("camera", ok=False, message=message)
@@ -510,6 +516,10 @@ class UmkaApplication:
     def close(self) -> None:
         """Остановить фоновые компоненты и освободить аппаратные ресурсы."""
         self.stop_event.set()
+        if self.local_stop is not None:
+            self.local_stop.close()
+        if self.sort_thread is not None:
+            self.sort_thread.join()
         self.screen.close()
         self.telemetry.close()
         if self.camera:

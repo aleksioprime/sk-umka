@@ -268,14 +268,7 @@ DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
 if compgen -G "/usr/share/xsessions/*.desktop" >/dev/null || compgen -G "/usr/share/wayland-sessions/*.desktop" >/dev/null; then
     step "Ярлыки на рабочем столе $DESKTOP_DIR"
     mkdir -p "$DESKTOP_DIR"
-    SHORTCUTS=(umka-screen.desktop)
-    # Со службой UMKA уже работает: второй экземпляр упал бы с «Address already in use».
-    if [ "$AUTOSTART" = on ] || { [ "$AUTOSTART" != off ] && systemctl is-enabled --quiet umka.service 2>/dev/null; }; then
-        rm -f "$DESKTOP_DIR/umka-start.desktop"
-    else
-        SHORTCUTS+=(umka-start.desktop)
-    fi
-    for name in "${SHORTCUTS[@]}"; do
+    for name in umka-start.desktop umka-screen.desktop; do
         render "$name" > "$DESKTOP_DIR/$name"
         chmod +x "$DESKTOP_DIR/$name"
         # Рабочие столы на GLib иначе спрашивают, доверять ли ярлыку.

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Запустить Chromium kiosk и разрешить странице закрыть только это окно."""
+"""Открыть УМКУ в полноэкранном Chromium и обработать выход из программы."""
 
 from __future__ import annotations
 
+import argparse
 import secrets
 import shutil
 import signal
@@ -15,13 +16,16 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import urlopen
 
+from sorter.local_stop import request_stop
+
 
 KIOSK_HELPER_HOST = "127.0.0.1"
 KIOSK_HELPER_PORT = 3001
 UMKA_STATE_URL = "http://127.0.0.1:3000/api/state"
+APP_DIR = Path(__file__).resolve().parent
 # Сообщения Chromium о GPU, ANGLE, Vulkan и опросе камер не связаны с UMKA и
 # засоряют терминал. Они уходят в этот файл и переписываются при каждом запуске.
-CHROMIUM_LOG = Path(__file__).resolve().parent / "data" / "logs" / "kiosk.log"
+CHROMIUM_LOG = APP_DIR / "data" / "logs" / "kiosk.log"
 
 
 def find_chromium() -> str:
@@ -80,7 +84,27 @@ def exit_on_sigterm() -> None:
     signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(0))
 
 
-def main() -> None:
+def start_umka():
+    """Запустить установленную службу или программу из её окружения."""
+    if wait_for_umka(timeout=1):
+        return
+    service = "umka.service"
+    result = subprocess.run(["systemctl", "show", "-p", "LoadState", "--value", service],
+                            capture_output=True, text=True)
+    if result.stdout.strip() == "loaded":
+        if subprocess.run(["sudo", "-n", "systemctl", "start", service]).returncode == 0:
+            return
+        pkexec = shutil.which("pkexec")
+        if pkexec and subprocess.run([pkexec, "/usr/bin/systemctl", "start", service]).returncode == 0:
+            return
+        raise RuntimeError("Не удалось запустить службу UMKA. Проверьте права пользователя.")
+
+    subprocess.Popen([APP_DIR / ".venv" / "bin" / "python", APP_DIR / "app.py"],
+                     cwd=APP_DIR, start_new_session=True, stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def main(start: bool) -> None:
     """Запустить локальный endpoint выхода и отдельный процесс Chromium."""
     exit_on_sigterm()
     chromium = find_chromium()
@@ -100,10 +124,17 @@ def main() -> None:
                 and self.client_address[0] in {"127.0.0.1", "::1"}
                 and secrets.compare_digest(supplied, token)
             )
-            self.send_response(204 if allowed else 403)
+            status = 204 if allowed else 403
+            if allowed:
+                try:
+                    request_stop()
+                except OSError as error:
+                    print(f"Не удалось остановить УМКУ: {error}", file=sys.stderr)
+                    status = 503
+            self.send_response(status)
             self.send_header("Access-Control-Allow-Origin", "http://localhost:3000")
             self.end_headers()
-            if allowed and chromium_process and chromium_process.poll() is None:
+            if status == 204 and chromium_process and chromium_process.poll() is None:
                 threading.Timer(0.1, chromium_process.terminate).start()
 
         def do_OPTIONS(self):
@@ -120,7 +151,10 @@ def main() -> None:
     server_thread.start()
 
     try:
-        wait_for_umka()
+        if start:
+            start_umka()
+        if not wait_for_umka():
+            raise RuntimeError("УМКА не запустилась. Проверьте журнал через manager.")
         query = urlencode({"kiosk_token": token})
         profile = kiosk_profile()
         profile.mkdir(parents=True, exist_ok=True)
@@ -160,9 +194,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--start", action="store_true", help="Запустить программу и открыть окно")
     try:
-        main()
+        main(parser.parse_args().start)
     except KeyboardInterrupt:
         # Ctrl+C - штатный способ закрыть киоск из терминала. Chromium уже
         # остановлен в блоке finally, поэтому трассировка ничего не поясняет.
         print("Киоск закрыт.")
+    except (OSError, RuntimeError) as error:
+        print(error, file=sys.stderr)
+        if zenity := shutil.which("zenity"):
+            subprocess.run([zenity, "--error", "--title=УМКА", f"--text={error}"])
+        sys.exit(1)

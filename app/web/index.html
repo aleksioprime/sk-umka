@@ -21,7 +21,7 @@
             <div class="eye-group eye-left">
               <div class="eye-slot"></div>
             </div>
-            <img src="/logo.png" alt="УМКА" class="logo-img">
+            <img src="/logo.png" alt="УМКА" class="logo-img" id="umka-logo" draggable="false">
             <div class="eye-group eye-right">
               <div class="eye-slot"></div>
             </div>
@@ -157,23 +157,24 @@
       <div class="feedback-icon" id="feedback-icon">✅</div>
     </div>
 
-    <!-- Подтверждение закрытия киоска, открывается из режима разработчика. -->
+    <!-- Подтверждение остановки программы. -->
     <div id="exit-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="exit-title">
       <div class="exit-dialog">
-        <h2 id="exit-title">Закрыть экран UMKA?</h2>
-        <p id="exit-message">Программа сортировки продолжит работать в фоне.</p>
+        <h2 id="exit-title">Выйти из программы?</h2>
+        <p id="exit-message" aria-live="polite">УМКА остановит сортировку и закроет окно.</p>
         <div class="exit-actions">
-          <button class="btn btn-no" id="exit-cancel" type="button">Вернуться</button>
-          <button class="btn btn-yes" id="exit-confirm" type="button">Закрыть экран</button>
+          <button class="btn" id="exit-cancel" type="button">Отмена</button>
+          <button class="btn exit-danger" id="exit-confirm" type="button">Выйти</button>
         </div>
       </div>
     </div>
 
-    <!-- Режим разработчика: пять касаний логотипа за четыре секунды. -->
+    <!-- Режим разработчика открывается пятью быстрыми касаниями логотипа. -->
     <div id="dev-panel" class="dev-panel" role="dialog" aria-modal="true" aria-labelledby="dev-title" hidden>
       <nav class="dev-menu" aria-labelledby="dev-title">
         <h2 id="dev-title">Меню устройства</h2>
-        <a class="dev-btn" id="dev-settings" href="/settings.html" data-keep-query>Настройки</a>
+        <button class="dev-btn" id="dev-back" type="button">Назад</button>
+        <a class="dev-btn" href="/settings.html" data-keep-query>Настройки</a>
         <a class="dev-btn" href="/menu.html#model" data-keep-query>Выбор модели</a>
         <a class="dev-btn" href="/menu.html#dataset" data-keep-query>Сбор датасета</a>
         <a class="dev-btn" href="/camera.html" data-keep-query>Демонстрация</a>
@@ -182,8 +183,7 @@
           <p class="diagnostics" id="diagnostics">Камера: проверка · Модель: проверка</p>
           <pre id="dev-debug-data"></pre>
         </aside>
-        <button class="dev-btn" id="dev-close-screen" type="button">Закрыть экран</button>
-        <button class="dev-btn dev-exit" id="dev-exit" type="button">Выйти из режима</button>
+        <button class="dev-btn exit-danger" id="dev-exit" type="button">Выход из программы</button>
       </nav>
     </div>
   </div>

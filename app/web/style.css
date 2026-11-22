@@ -129,6 +129,7 @@ body {
   flex-direction: column;
   align-items: center;
   cursor: pointer;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   animation: float 3s ease-in-out infinite;
 }
@@ -247,6 +248,7 @@ body {
 /* Лапки с мягкой подсветкой в цвет глаз. */
 .paw {
   position: absolute;
+  pointer-events: none;
   bottom: -30px;
   width: 50px;
   height: 40px;
@@ -1286,6 +1288,11 @@ body {
   flex-wrap: wrap;
 }
 
+#exit-cancel {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
 /* ---------- Режим разработчика ---------- */
 .dev-panel {
   position: fixed;
@@ -1345,10 +1352,16 @@ body {
   background: #284a41;
 }
 
-.dev-btn.dev-exit {
-  border-color: #a06d77;
-  background: var(--no-color);
-  color: #ffe4e6;
+.exit-danger,
+.dev-btn.exit-danger {
+  border-color: #e87980;
+  background: #973740;
+  color: #fff2f2;
+}
+
+.exit-danger:is(:hover, :focus-visible),
+.dev-btn.exit-danger:is(:hover, :focus-visible) {
+  background: #b9444e;
 }
 
 .dev-debug {
