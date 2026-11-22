@@ -13,7 +13,7 @@ UMKA распознаёт мусор USB-камерой и моделью YOLO, 
 | [docs/](docs/) | [подключение оборудования и поэтапная сборка](docs/hardware.md), [решение проблем](docs/troubleshooting.md) |
 | [web/](web/README.md) | сервер мониторинга сети устройств: MQTT → PostgreSQL → API (основа) |
 
-Инструменты обучения, экспорта и отдельные сборщики снимков сохранены в ветке `archive-model-tooling`, каталог `model/`.
+Прежняя версия проекта сохранена в ветке [archive-v1](https://github.com/aleksioprime/sk-umka/tree/archive-v1). Инструменты обучения, экспорта и отдельные сборщики снимков находятся в [каталоге model ветки archive-v2](https://github.com/aleksioprime/sk-umka/tree/archive-v2/model).
 
 ## Быстрый старт
 
