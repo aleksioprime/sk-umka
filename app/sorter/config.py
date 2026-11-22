@@ -27,6 +27,7 @@ class AppConfig:
 
     # Файлы и каталоги приложения.
     model_path: Path = BASE_DIR / "best.pt"  # Веса обученной модели YOLO.
+    restore_model: bool = True
     stats_path: Path = BASE_DIR / "data" / "sort_stats.json"  # Общие счётчики и масса.
     events_path: Path = BASE_DIR / "data" / "events" / "events.jsonl"  # История операций.
     log_path: Path = BASE_DIR / "data" / "logs" / "umka.log"  # Журнал работы и ошибок.

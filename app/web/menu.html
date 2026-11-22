@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru" translate="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="google" content="notranslate">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Меню устройства · УМКА</title>
+  <link rel="stylesheet" href="/service.css">
+</head>
+<body class="device-menu">
+  <header><h1>Меню устройства</h1><button id="finish">Вернуться к сортировке</button></header>
+  <main>
+    <section class="card">
+      <h2><label for="model">Модель сортировки</label></h2>
+      <select id="model"></select>
+      <button id="apply">Применить модель</button>
+      <p id="model-status" role="status"></p>
+    </section>
+    <section class="card">
+      <h2>Ручной сбор датасета</h2>
+      <button id="start" class="primary">Приостановить сортировку и начать сбор</button>
+      <div id="capture-controls" hidden>
+        <p>Сортировка приостановлена. Положите предмет на площадку.</p>
+        <img id="view" alt="Камера площадки">
+        <label for="destination">Сохранять в</label>
+        <div class="actions"><select id="destination"></select><button id="refresh">Обновить носители</button></div>
+        <label for="category">Категория снимка</label>
+        <select id="category">
+          <option value="unlabelled">Для последующей разметки</option>
+          <option value="paper">Бумага</option><option value="plastic">Пластик</option>
+          <option value="organic">Органика</option><option value="non_recyclable">Несортируемые</option>
+          <option value="background">Пустая площадка</option>
+        </select>
+        <button id="capture" class="primary">Сохранить снимок</button>
+      </div>
+      <p id="photo-status" role="status"></p>
+    </section>
+  </main>
+  <script src="/menu.js"></script>
+</body>
+</html>

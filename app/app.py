@@ -60,6 +60,7 @@ def main() -> None:
     config = replace(
         config,
         camera_index=args.camera,
+        restore_model=args.model is None,
         model_path=args.model.resolve() if args.model else config.model_path,
         web_host=args.host,
         web_port=args.port,

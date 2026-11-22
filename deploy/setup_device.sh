@@ -112,7 +112,7 @@ if [ "$SKIP_SYSTEM" -eq 0 ]; then
     fi
 
     # Киоску нужен Chromium, но только там, где есть графический рабочий стол.
-    if ls /usr/share/xsessions/*.desktop >/dev/null 2>&1; then
+    if compgen -G "/usr/share/xsessions/*.desktop" >/dev/null || compgen -G "/usr/share/wayland-sessions/*.desktop" >/dev/null; then
         if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null \
                 && [ ! -x /snap/bin/chromium ]; then
             sudo apt-get install -y chromium || sudo apt-get install -y chromium-browser \
@@ -237,7 +237,7 @@ if [ ! -f "$CONF" ]; then
     elif [ -n "$DEFAULT_BUS" ] && [ -e "/dev/i2c-$DEFAULT_BUS" ]; then
         # Вывод сохраняется заранее: с pipefail ранний выход grep -q обрывает
         # i2cdetect сигналом SIGPIPE, и цепочка ложно считается неудачной.
-        SCAN="$(i2cdetect -y "$DEFAULT_BUS" 2>/dev/null || true)"
+        SCAN="$(PATH="$PATH:/usr/sbin" i2cdetect -y "$DEFAULT_BUS" 2>/dev/null || true)"
         grep -qE '^40:[[:space:]]+(40|UU)' <<< "$SCAN" && HARDWARE=pca9685
     fi
     cat > "$CONF" <<EOF
@@ -257,7 +257,7 @@ fi
 for update in ${CONF_UPDATES[@]+"${CONF_UPDATES[@]}"}; do
     set_conf "${update%%=*}" "${update#*=}"
 done
-grep -vE '^[[:space:]]*(#|$)' "$CONF" | sed 's/^/    /'
+grep -E '^(hardware|camera|tilt_channel|rotate_channel|i2c_bus) *=' "$CONF" || true
 
 # ---------- Ярлыки и автозапуск ----------
 render() {
@@ -265,7 +265,7 @@ render() {
 }
 
 DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
-if ls /usr/share/xsessions/*.desktop >/dev/null 2>&1; then
+if compgen -G "/usr/share/xsessions/*.desktop" >/dev/null || compgen -G "/usr/share/wayland-sessions/*.desktop" >/dev/null; then
     step "Ярлыки на рабочем столе $DESKTOP_DIR"
     mkdir -p "$DESKTOP_DIR"
     SHORTCUTS=(umka-screen.desktop)

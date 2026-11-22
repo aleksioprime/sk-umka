@@ -75,6 +75,12 @@ class SortingController:
             confidence=detection.confidence,
         )
 
+    def discard_candidate(self) -> None:
+        """Начинать подтверждение заново после смены режима или модели."""
+        with self._lock:
+            if self.state == self.CANDIDATE:
+                self._reset()
+
     def sorting_finished(self) -> None:
         """Отметить успешное завершение механизма и ждать удаления предмета."""
         with self._lock:

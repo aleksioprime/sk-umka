@@ -14,7 +14,8 @@ from .camera_controls import CameraControls
 from .crop import CropArea
 from .dataset import DatasetCollector
 from .controller import SortingController
-from .detector import YoloDetector
+from .model_menu import ModelMenu
+from .manual_capture import usb_volumes
 from .display_settings import DisplaySettings
 from .event_journal import EventJournal
 from .hardware import create_hardware
@@ -51,12 +52,14 @@ class UmkaApplication:
         )
         self.hardware = None
         self.camera = None
-        self.detector = None
+        self.mode_lock = threading.Lock()
+        self.manual = False
         self.preview = FramePreview()
         self.crop = CropArea(config)
         self.camera_controls = CameraControls(config.camera_controls_path)
         self.display = DisplaySettings(config.display_path)
         self.dataset = DatasetCollector(config.dataset_dir, config.dataset_settings_path)
+        self.models = ModelMenu(config, self.dataset)
         self.screen = ScreenManager(config.screen_path)
         self.telemetry = Telemetry(launch_config.load(), self.state, config.events_path,
                                    config.telemetry_cursor_path)
@@ -98,6 +101,11 @@ class UmkaApplication:
                 ("POST", "/api/dataset"): lambda body: (200, self.dataset.save_settings(body)),
                 ("POST", "/api/dataset/clear"): lambda _body: (200, self.dataset.clear()),
                 ("GET", "/api/dataset/export"): lambda _body: (200, self.dataset.export()),
+                ("GET", "/api/models"): lambda _: (200, self.models.snapshot()),
+                ("POST", "/api/models"): self._select_model,
+                ("GET", "/api/capture"): self._capture_options,
+                ("POST", "/api/capture/mode"): self._capture_mode,
+                ("POST", "/api/capture"): self._take_photo,
                 ("GET", "/api/crop"): lambda _body: (200, self.crop.snapshot()),
                 ("POST", "/api/crop"): lambda body: (200, self.crop.save(body)),
             },
@@ -107,6 +115,44 @@ class UmkaApplication:
         self.sort_queue: queue.Queue = queue.Queue(maxsize=1)
         self.stop_event = threading.Event()
         self.sort_thread = None
+
+    def _select_model(self, body):
+        with self.mode_lock:
+            if self.models.active is None:
+                return 503, {"error": "Модель загружается"}
+            self.models.select(body["id"])
+            self.controller.discard_candidate()
+            self.state.update_component("model", ok=True, message=self.models.detector.config.model_path.name)
+            return 200, self.models.snapshot()
+
+    def _capture_options(self, _body):
+        return 200, {"active": self.manual, "destinations": [
+            {"id": "local", "name": "Память устройства"},
+            *({"id": key, "name": str(path)} for key, (path, _) in usb_volumes().items())
+        ]}
+
+    def _capture_mode(self, body):
+        active = body["active"]
+        if not isinstance(active, bool):
+            raise ValueError("active должен быть логическим значением")
+        with self.mode_lock:
+            if active and (self.camera is None or self.controller.state == self.controller.SORTING):
+                return 409, {"error": "Дождитесь готовности камеры и завершения сброса"}
+            self.manual = active
+            self.controller.discard_candidate()
+            self.state.update(manualCapture=active, controllerState=self.controller.state)
+        return 200, {"active": active}
+
+    def _take_photo(self, body):
+        category = body.get("category", "unlabelled")
+        if category not in (*self.config.class_to_section, "background", "unlabelled"):
+            raise ValueError("Неизвестная категория снимка")
+        with self.mode_lock:
+            if not self.manual:
+                return 409, {"error": "Включите ручной сбор"}
+            frame = self.camera.fresh_frame()
+            name = self.dataset.record_manual(frame, body["destination"], category)
+            return 201, {"filename": name}
 
     def feedback(self, answer: str, event_id: str | None) -> bool:
         """Атомарно принять один ответ для текущего события сортировки."""
@@ -290,11 +336,9 @@ class UmkaApplication:
         try:
             # Сервер запускается первым, чтобы на странице были видны ошибки
             # последующей инициализации модели, GPIO или камеры.
-            self.detector = YoloDetector(self.config)
-            names = self.detector.model.names
-            self.dataset.class_names = [str(names[index]) for index in sorted(names)] \
-                if isinstance(names, dict) else [str(name) for name in names]
-            self.state.update_component("model", ok=True, message="YOLO загружена")
+            with self.mode_lock:
+                self.models.start(restore=self.config.restore_model)
+                self.state.update_component("model", ok=True, message=self.models.detector.config.model_path.name)
             self.hardware = create_hardware(
                 self.config.hardware_driver,
                 self.config.simulate_delay,
@@ -322,7 +366,7 @@ class UmkaApplication:
         except Exception as exc:
             LOG.exception("Критическая ошибка UMKA")
             self.state.update(error=str(exc))
-            if self.detector is None:
+            if self.models.detector is None:
                 self.state.update_component("model", ok=False, message=str(exc))
             raise
         finally:
@@ -338,66 +382,74 @@ class UmkaApplication:
                 self.state.update_component("camera", ok=False, message=message)
                 continue
             self.state.update_component("camera", ok=True, message=self.camera.device)
-            cropped, area = self.crop.apply(frame)
-            self.platform.capture_if_requested(frame)
-            detection = self.detector.detect(cropped)
-            rejected = None
-            difference = None
+            with self.mode_lock:
+                self._process_frame(frame)
+
+    def _process_frame(self, frame):
+        cropped, area = self.crop.apply(frame)
+        self.platform.capture_if_requested(frame)
+        if self.manual:
+            self.preview.publish(frame, area, None)
+            self.state.show_detection(None)
+            return
+        detection = self.models.detector.detect(cropped)
+        rejected = None
+        difference = None
+        if detection is not None:
+            # Рамка YOLO задана в обрезанном кадре, эталон - в полном.
+            x1, y1, x2, y2 = detection.box
+            left, top = area[:2]
+            box = (left + x1, top + y1, left + x2, top + y2)
+            difference = self.platform.difference(frame, box)
+            if difference is not None and difference < self.platform.threshold:
+                # Рамка совпадает с пустой площадкой: блик или дно, не предмет.
+                rejected, detection = detection, None
+                self._save_dataset(self.dataset.record_background, frame,
+                                   rejected.class_name, rejected.confidence)
+        self.state.update(platform={
+            "reference": self.platform.has_reference,
+            "references": self.platform.count,
+            "difference": None if difference is None else round(difference, 1),
+            "threshold": self.config.background_threshold,
+            "rejected": rejected is not None,
+        })
+        self.preview.publish(frame, area, detection, rejected)
+        self.state.show_detection(detection)
+        if self.maintenance:
+            # Моторами управляет страница настроек: решения не принимаются.
+            return
+        previous_state = self.controller.state
+        request = self.controller.observe(detection)
+        self.state.update(controllerState=self.controller.state)
+        if (
+            previous_state == self.controller.WAITING_FOR_REMOVAL
+            and self.controller.state == self.controller.IDLE
+        ):
+            # UI очищается только после подтверждённого освобождения
+            # площадки, а не сразу после завершения движения.
+            self.state.update(
+                state="idle",
+                type=None,
+                name=None,
+                section=None,
+                eventId=None,
+                lastAnswer=None,
+                lastAction="Площадка свободна, система готова",
+            )
+        if request:
+            # Веб-состояние публикуется до помещения команды в очередь,
+            # поэтому пользователь сразу видит выбранный тип и секцию.
+            event_id = self.state.begin_sort(request)
+            LOG.info(
+                "Решение: %s (%.2f) → %s",
+                request.class_name,
+                request.confidence,
+                request.section,
+            )
             if detection is not None:
-                # Рамка YOLO задана в обрезанном кадре, эталон - в полном.
-                x1, y1, x2, y2 = detection.box
-                left, top = area[:2]
-                box = (left + x1, top + y1, left + x2, top + y2)
-                difference = self.platform.difference(frame, box)
-                if difference is not None and difference < self.platform.threshold:
-                    # Рамка совпадает с пустой площадкой: блик или дно, не предмет.
-                    rejected, detection = detection, None
-                    self._save_dataset(self.dataset.record_background, frame,
-                                       rejected.class_name, rejected.confidence)
-            self.state.update(platform={
-                "reference": self.platform.has_reference,
-                "references": self.platform.count,
-                "difference": None if difference is None else round(difference, 1),
-                "threshold": self.config.background_threshold,
-                "rejected": rejected is not None,
-            })
-            self.preview.publish(frame, area, detection, rejected)
-            self.state.show_detection(detection)
-            if self.maintenance:
-                # Моторами управляет страница настроек: решения не принимаются.
-                continue
-            previous_state = self.controller.state
-            request = self.controller.observe(detection)
-            self.state.update(controllerState=self.controller.state)
-            if (
-                previous_state == self.controller.WAITING_FOR_REMOVAL
-                and self.controller.state == self.controller.IDLE
-            ):
-                # UI очищается только после подтверждённого освобождения
-                # площадки, а не сразу после завершения движения.
-                self.state.update(
-                    state="idle",
-                    type=None,
-                    name=None,
-                    section=None,
-                    eventId=None,
-                    lastAnswer=None,
-                    lastAction="Площадка свободна, система готова",
-                )
-            if request:
-                # Веб-состояние публикуется до помещения команды в очередь,
-                # поэтому пользователь сразу видит выбранный тип и секцию.
-                event_id = self.state.begin_sort(request)
-                LOG.info(
-                    "Решение: %s (%.2f) → %s",
-                    request.class_name,
-                    request.confidence,
-                    request.section,
-                )
-                if detection is not None:
-                    self._save_dataset(self.dataset.record_decision, event_id, frame, box,
-                                       detection.class_id, detection.class_name, detection.confidence)
-                self.sort_queue.put((request, event_id))
+                self._save_dataset(self.dataset.record_decision, event_id, frame, box,
+                                   self.models.label_ids[detection.class_id], detection.class_name, detection.confidence)
+            self.sort_queue.put((request, event_id))
 
     def _save_dataset(self, method, *args) -> None:
         """Сохранить кадр датасета; ошибка диска не должна останавливать сортировку."""

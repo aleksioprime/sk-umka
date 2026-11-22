@@ -491,13 +491,16 @@ function updateUI(data) {
     WAITING_FOR_REMOVAL: "Уберите предмет с площадки",
   };
   systemStatus.textContent =
+    data.manualCapture ? "Ручной сбор · откройте меню для съёмки" :
     finishing ? "Завершаю сортировку…" :
       statuses[data.controllerState] || "Система запущена";
   document.querySelectorAll(".btn[data-answer]").forEach((btn) => {
     btn.disabled = answerPending || Boolean(answer);
   });
 
-  if (finishing) {
+  if (data.manualCapture) {
+    showIdle(data);
+  } else if (finishing) {
     // Меняем только экран: сервер продолжает ждать завершения механики
     // и подтверждённого освобождения площадки перед следующим сбросом.
     showIdle(data);

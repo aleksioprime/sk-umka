@@ -5,7 +5,7 @@
 
 | Плата | Система | Шина I2C для PCA9685 |
 | --- | --- | --- |
-| Raspberry Pi 5 | Raspberry Pi OS 64-bit (Bookworm) | `/dev/i2c-1` |
+| Raspberry Pi 5 | Raspberry Pi OS 64-bit (Bookworm, обновление проверено также на Trixie) | `/dev/i2c-1` |
 | Raspberry Pi 4 | Raspberry Pi OS 64-bit (Bookworm) | `/dev/i2c-1` |
 | Orange Pi 5 / 5B | Ubuntu 22.04 Jammy (образ Orange Pi) | `/dev/i2c-5` |
 
@@ -76,6 +76,17 @@ deploy/install.sh orangepi@192.168.10.100 --tilt-channel 0 --rotate-channel 1 --
 ```
 
 ## Обновление
+
+У Raspberry Pi 5 на стенде адрес `192.168.10.52` и пользователь `umka`.
+На этой плате прежний Python 3.13 с рабочими PyTorch, OpenCV и ServoKit
+можно использовать повторно. Если старая версия ещё без MQTT, установите
+`paho-mqtt==2.1.0` в `~/app/.venv`. Перед первым обновлением со старой
+структуры сохраните копию `~/app` и ярлыков, так как установщик удаляет
+устаревшие файлы программы. Для обновления уже подготовленной платы:
+
+```bash
+deploy/install.sh umka@192.168.10.52 --ssh-key ~/.ssh/umka_rpi52 --code-only
+```
 
 После изменений в коде:
 

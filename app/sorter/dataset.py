@@ -20,10 +20,12 @@ import time
 import zipfile
 from pathlib import Path
 
+from .manual_capture import save_capture
+
 
 LOG = logging.getLogger(__name__)
 
-GROUPS = ("unverified", "confirmed", "rejected", "background")
+GROUPS = ("unverified", "confirmed", "rejected", "background", "manual")
 DEFAULTS = {"enabled": False, "limitMb": 2000}
 LIMIT_RANGE_MB = (100, 20000)
 BACKGROUND_INTERVAL = 30.0  # Не чаще одного негатива в 30 с: ложное срабатывание повторяется каждый кадр.
@@ -36,7 +38,7 @@ class DatasetCollector:
         self.directory = directory
         self.settings_path = settings_path
         self.class_names: list[str] = []  # Имена классов модели по номерам YOLO.
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._last_background = 0.0
         self.settings = dict(DEFAULTS)
         if settings_path.is_file():
@@ -82,10 +84,18 @@ class DatasetCollector:
         if not ok:
             LOG.warning("Кадр %s не закодирован", item_id)
             return
-        (folder / f"{item_id}.jpg").write_bytes(encoded.tobytes())
-        (folder / f"{item_id}.txt").write_text(label, encoding="utf-8")
-        (folder / f"{item_id}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
-        self._enforce_limit()
+        with self._lock:
+            (folder / f"{item_id}.jpg").write_bytes(encoded.tobytes())
+            (folder / f"{item_id}.txt").write_text(label, encoding="utf-8")
+            (folder / f"{item_id}.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+            self._enforce_limit()
+
+    def record_manual(self, frame, destination, category):
+        with self._lock:
+            name = save_capture(frame, destination, category, self.directory / "manual")
+            if destination == "local":
+                self._enforce_limit()
+            return name
 
     def record_decision(self, event_id: str, frame, box, class_id: int, class_name: str,
                         confidence: float) -> None:
@@ -149,10 +159,11 @@ class DatasetCollector:
     # ---------- Просмотр, очистка, выгрузка ----------
     def snapshot(self) -> dict:
         """Настройки, число кадров по группам и занятое место."""
-        counts = {group: len(list((self.directory / group).glob("*.jpg"))) for group in GROUPS}
-        size = sum(path.stat().st_size for path in self.directory.rglob("*") if path.is_file()) \
-            if self.directory.exists() else 0
-        return {**self.settings, "counts": counts, "sizeMb": round(size / 1024 / 1024, 1)}
+        with self._lock:
+            counts = {group: len(list((self.directory / group).glob("*.jpg"))) for group in GROUPS}
+            size = sum(path.stat().st_size for path in self.directory.rglob("*") if path.is_file()) \
+                if self.directory.exists() else 0
+            return {**self.settings, "counts": counts, "sizeMb": round(size / 1024 / 1024, 1)}
 
     def clear(self) -> dict:
         with self._lock:
@@ -166,16 +177,17 @@ class DatasetCollector:
         handle = tempfile.NamedTemporaryFile(prefix="umka-dataset-", suffix=".zip", delete=False)
         handle.close()
         path = Path(handle.name)
-        names = "\n".join(f"  {index}: {name}" for index, name in enumerate(self.class_names))
-        with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as archive:
-            archive.writestr("data.yaml", f"# Классы модели UMKA на момент выгрузки\nnames:\n{names}\n")
-            archive.writestr("README.txt", (
-                "confirmed  - посетитель подтвердил распознавание: разметка верна.\n"
-                "rejected   - посетитель ответил «Нет»: класс или рамку нужно исправить.\n"
-                "unverified - без ответа посетителя: проверить перед обучением.\n"
-                "background - пустая площадка, где модель ошиблась: фон без разметки.\n"
-                "В каждой группе images/ и labels/ (YOLO), в meta/ - сведения о кадре.\n"))
-            with self._lock:
+        with self._lock:
+            names = "\n".join(f"  {index}: {name}" for index, name in enumerate(self.class_names))
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as archive:
+                archive.writestr("data.yaml", f"# Номера классов в разметке датасета UMKA\nnames:\n{names}\n")
+                archive.writestr("README.txt", (
+                    "confirmed  - посетитель подтвердил распознавание: разметка верна.\n"
+                    "rejected   - посетитель ответил «Нет»: класс или рамку нужно исправить.\n"
+                    "unverified - без ответа посетителя: проверить перед обучением.\n"
+                    "background - пустая площадка, где модель ошиблась: фон без разметки.\n"
+                    "manual     - ручные снимки для разметки; выбранный класс указан в имени JPEG.\n"
+                    "Снимки лежат в images/, автоматическая разметка в labels/, сведения в meta/.\n"))
                 for group in GROUPS:
                     for image in sorted((self.directory / group).glob("*.jpg")):
                         archive.write(image, f"{group}/images/{image.name}")

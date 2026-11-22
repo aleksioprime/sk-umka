@@ -120,6 +120,15 @@ class UsbCamera:
                 return previous_sequence, None
             return self._sequence, self._frame.copy()
 
+    def fresh_frame(self):
+        """Получить кадр, снятый после нажатия кнопки."""
+        with self._condition:
+            sequence = self._sequence
+        _, frame = self.next_frame(sequence)
+        if frame is None:
+            raise RuntimeError("Камера не вернула новый кадр")
+        return frame
+
     def close(self) -> None:
         """Остановить поток чтения и освободить устройство камеры."""
         self._stopped.set()
