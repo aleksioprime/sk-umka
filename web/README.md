@@ -14,6 +14,10 @@ curl localhost:8300/api/devices
 
 Локально страница мониторинга - <http://localhost:8301>, API - <http://localhost:8300>.
 
+Нажмите на устройство в списке, чтобы открыть обзор, журнал сортировок и диагностику.
+На телефоне панель открывается на весь экран. В журнале есть фильтры по периоду,
+виду отходов и ответу посетителя.
+
 ## Продакшн (Coolify)
 
 Адрес: **https://umka.technocrew.ru**. Схема как у empolimer:
@@ -79,6 +83,7 @@ docker compose exec backend python create_user.py admin --admin
 | `GET /api/devices` | устройства, `online` (статус не старше 3 минут), последний статус |
 | `GET /api/devices/{id}` | одно устройство |
 | `GET /api/devices/{id}/events?limit=100` | последние события |
+| `GET /api/devices/{id}/sorts` | завершённые сортировки с ответами; параметры `days`, `waste_type`, `answer` (`yes`, `no`, `none`), `limit`, `before` (из поля ответа `next`) |
 | `GET /api/summary` | число устройств и сортировок по типам отходов |
 
 ## Дальше
