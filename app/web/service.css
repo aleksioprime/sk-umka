@@ -82,7 +82,7 @@ select { width: 100%; padding: 6px 10px; border-radius: 10px; border: 1px solid 
 .dataset-groups small { color: var(--muted); font-size: 12px; }
 
 .device-menu main { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 12px; overflow: auto; }
-.device-menu .card { flex: 1 1 260px; display: block; min-width: 0; }
+.device-menu .card { flex: 1 1 260px; min-width: 0; }
 .device-menu select, .device-menu button { min-height: 44px; margin: 4px 0; }
 .device-menu label { display: block; margin-top: 8px; }
 .device-menu img { display: block; width: 100%; max-height: 34vh; object-fit: contain; background: #000; }

@@ -10,14 +10,13 @@
 </head>
 
 <body>
-  <a class="device-menu-link" data-keep-query href="/menu.html">Меню</a>
   <div id="app">
     <!-- ЭКРАН ОЖИДАНИЯ -->
     <div id="idle-screen" class="screen active">
       <div class="bg-animation"></div>
       <div class="content">
         <!-- Мордочка: логотип с глазами + лапки -->
-        <div class="face-container" id="face-container">
+        <div class="face-container" id="face-container" tabindex="-1">
           <div class="logo-container">
             <div class="eye-group eye-left">
               <div class="eye-slot"></div>
@@ -171,17 +170,22 @@
     </div>
 
     <!-- Режим разработчика: пять касаний логотипа за четыре секунды. -->
-    <nav id="dev-panel" class="dev-panel" hidden>
-      <a class="dev-btn" href="/settings.html" data-keep-query>Настройки</a>
-      <a class="dev-btn" href="/camera.html" data-keep-query>Демонстрация</a>
-      <button class="dev-btn" id="dev-debug" type="button">Отладка</button>
-      <button class="dev-btn" id="dev-close-screen" type="button">Закрыть экран</button>
-      <button class="dev-btn dev-exit" id="dev-exit" type="button">Выйти из режима</button>
-    </nav>
-    <aside id="dev-debug-panel" class="dev-debug" hidden>
-      <p class="diagnostics" id="diagnostics">Камера: проверка · Модель: проверка</p>
-      <pre id="dev-debug-data"></pre>
-    </aside>
+    <div id="dev-panel" class="dev-panel" role="dialog" aria-modal="true" aria-labelledby="dev-title" hidden>
+      <nav class="dev-menu" aria-labelledby="dev-title">
+        <h2 id="dev-title">Меню устройства</h2>
+        <a class="dev-btn" id="dev-settings" href="/settings.html" data-keep-query>Настройки</a>
+        <a class="dev-btn" href="/menu.html#model" data-keep-query>Выбор модели</a>
+        <a class="dev-btn" href="/menu.html#dataset" data-keep-query>Сбор датасета</a>
+        <a class="dev-btn" href="/camera.html" data-keep-query>Демонстрация</a>
+        <button class="dev-btn" id="dev-debug" type="button" aria-controls="dev-debug-panel" aria-expanded="false">Отладка</button>
+        <aside id="dev-debug-panel" class="dev-debug" hidden>
+          <p class="diagnostics" id="diagnostics">Камера: проверка · Модель: проверка</p>
+          <pre id="dev-debug-data"></pre>
+        </aside>
+        <button class="dev-btn" id="dev-close-screen" type="button">Закрыть экран</button>
+        <button class="dev-btn dev-exit" id="dev-exit" type="button">Выйти из режима</button>
+      </nav>
+    </div>
   </div>
 
   <script src="/js/qrcode.min.js"></script>

@@ -1,4 +1,15 @@
 const el = id => document.getElementById(id);
+const modelsVisible = location.hash !== "#dataset";
+const captureVisible = location.hash !== "#model";
+el("model-card").hidden = !modelsVisible;
+el("capture-card").hidden = !captureVisible;
+if (!captureVisible) {
+  el("menu-title").textContent = "Выбор модели";
+  el("finish").textContent = "Готово";
+} else if (!modelsVisible) {
+  el("menu-title").textContent = "Сбор датасета";
+}
+
 async function request(path, body) {
   const response = await fetch(path, body === undefined ? {cache: "no-store"} : {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
@@ -59,8 +70,8 @@ action("start", "photo-status", async () => {
   showMode(data.active);
   await destinations();
 });
-action("finish", "photo-status", async () => {
-  await request("/api/capture/mode", {active: false});
+action("finish", captureVisible ? "photo-status" : "model-status", async () => {
+  if (captureVisible) await request("/api/capture/mode", {active: false});
   location.assign("/" + location.search);
 });
 action("refresh", "photo-status", destinations);
@@ -72,5 +83,9 @@ action("capture", "photo-status", async () => {
   el("photo-status").textContent = `Сохранено: ${el("destination").selectedOptions[0].text} / ${result.filename}`;
 });
 
-request("/api/models").then(showModel).catch(error => { el("model-status").textContent = error.message; });
-destinations().then(data => showMode(data.active)).catch(error => { el("photo-status").textContent = error.message; });
+if (modelsVisible) {
+  request("/api/models").then(showModel).catch(error => { el("model-status").textContent = error.message; });
+}
+if (captureVisible) {
+  destinations().then(data => showMode(data.active)).catch(error => { el("photo-status").textContent = error.message; });
+}

@@ -11,6 +11,8 @@ function element() {
   const classes = new Set();
   return {
     textContent: "", disabled: false, style: { setProperty() {} },
+    focus() {},
+    setAttribute() {},
     classList: {
       add: (...names) => names.forEach((name) => classes.add(name)),
       remove: (...names) => names.forEach((name) => classes.delete(name)),

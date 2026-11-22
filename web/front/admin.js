@@ -57,6 +57,21 @@ function submitForm(id, action) {
   });
 }
 
+function openRegistration(deviceId = "") {
+  const form = $("device-register-form");
+  form.reset();
+  formError(form);
+  form.elements.id.value = deviceId;
+  $("register-dialog").showModal();
+  if (deviceId) form.elements.name.focus();
+}
+
+function updateMqttRegistration() {
+  for (const button of $("mqtt-list").querySelectorAll("[data-register-id]")) {
+    button.hidden = devices.some((device) => device.id === button.dataset.registerId);
+  }
+}
+
 function mqttEntry(message) {
   const item = document.createElement("li");
   item.className = "card mqtt-entry";
@@ -70,6 +85,16 @@ function mqttEntry(message) {
   const payload = document.createElement("pre");
   details.append(summary, meta, payload);
   item.append(details);
+  const deviceId = message.device_id;
+  if (message.result === "unregistered" && /^[A-Za-z0-9_-]{1,64}$/.test(deviceId ?? "")) {
+    const register = document.createElement("button");
+    register.type = "button";
+    register.className = "panel-button";
+    register.textContent = "Зарегистрировать";
+    register.dataset.registerId = deviceId;
+    register.addEventListener("click", () => openRegistration(deviceId));
+    item.append(register);
+  }
   let loading = false;
   let loaded = false;
   details.addEventListener("toggle", async () => {
@@ -103,6 +128,7 @@ async function loadMqtt(before = null) {
     const data = await api(`/api/mqtt/messages?${query}`);
     if (version !== mqttVersion) return;
     list.append(...data.items.map(mqttEntry));
+    updateMqttRegistration();
     message.textContent = list.children.length ? `Показано сообщений: ${list.children.length}` : "Сообщений по этим фильтрам нет";
     more.hidden = !data.next;
     more.textContent = "Показать ещё";
@@ -124,18 +150,23 @@ function applyMqttFilters() {
   loadMqtt();
 }
 
+function openMqtt(deviceId = "") {
+  const filters = $("mqtt-filters");
+  filters.reset();
+  filters.elements.device_id.value = deviceId;
+  $("mqtt-dialog").showModal();
+  applyMqttFilters();
+}
+
 function setupAdmin() {
   for (const button of document.querySelectorAll(".admin-dialog [data-close]")) {
     button.addEventListener("click", () => button.closest("dialog").close());
   }
-  $("register-device").addEventListener("click", () => {
-    $("device-register-form").reset();
-    formError($("device-register-form"));
-    $("register-dialog").showModal();
-  });
+  $("register-device").addEventListener("click", () => openRegistration());
   submitForm("device-register-form", async (fields) => {
     const device = await api("/api/devices", "POST", { id: fields.id.trim(), name: fields.name.trim() });
     $("register-dialog").close();
+    $("mqtt-dialog").close();
     showAdminResult(`Устройство ${device.id} зарегистрировано`);
     await refresh();
     openPanel(device.id);
@@ -182,9 +213,9 @@ function setupAdmin() {
     showAdminResult(`Устройство ${id} удалено из мониторинга`);
     await refresh();
   });
-  $("open-mqtt").addEventListener("click", () => {
-    $("mqtt-dialog").showModal();
-    applyMqttFilters();
+  $("open-mqtt").addEventListener("click", () => openMqtt());
+  $("device-mqtt").addEventListener("click", () => {
+    if (selected) openMqtt(selected.id);
   });
   $("mqtt-dialog").addEventListener("close", () => { mqttVersion++; });
   $("mqtt-filters").addEventListener("submit", (event) => {

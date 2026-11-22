@@ -109,7 +109,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // kiosk_token нужен кнопке «Закрыть экран», поэтому служебные ссылки его сохраняют.
   for (const link of document.querySelectorAll("[data-keep-query]")) {
-    link.href = link.getAttribute("href") + window.location.search;
+    const url = new URL(link.getAttribute("href"), window.location.href);
+    url.search = window.location.search;
+    link.href = url.href;
   }
 
   exitCancel.addEventListener("click", hideExitDialog);
@@ -123,6 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("pointerdown", () => {
     if (devPanel && !devPanel.hidden) setDevMode(true);
   });
+  document.addEventListener("keydown", handleDevMenuKey);
   setDevMode(readDevModeExpiry() > Date.now());
   setDevDebug(storageGet(DEV_DEBUG_KEY) === "1");
 });
@@ -147,23 +150,46 @@ function readDevModeExpiry() {
 // Включить режим разработчика (или продлить его) либо выключить.
 function setDevMode(enabled) {
   clearTimeout(devModeTimer);
+  const changed = devPanel.hidden === enabled;
   devPanel.hidden = !enabled;
+  idleScreen.inert = wasteScreen.inert = enabled;
   document.body?.classList.toggle("dev-mode", enabled);
   if (enabled) {
     storageSet(DEV_MODE_KEY, String(Date.now() + DEV_MODE_IDLE_MS));
     devModeTimer = setTimeout(() => setDevMode(false), DEV_MODE_IDLE_MS);
+    if (changed) document.getElementById("dev-settings").focus();
   } else {
     storageSet(DEV_MODE_KEY, null);
     setDevDebug(false);
     hideExitDialog();
+    if (changed && idleScreen.classList.contains("active")) faceContainer.focus();
   }
 }
 
 function setDevDebug(visible) {
   const show = visible && !devPanel.hidden;
   devDebugPanel.hidden = !show;
+  document.getElementById("dev-debug").setAttribute("aria-expanded", String(show));
   storageSet(DEV_DEBUG_KEY, show ? "1" : null);
   if (show && currentState) renderDevDebug(currentState);
+}
+
+function handleDevMenuKey(event) {
+  if (devPanel.hidden) return;
+  const exitOpen = exitOverlay.classList.contains("active");
+  if (event.key === "Escape") {
+    if (exitOpen) hideExitDialog();
+    else setDevMode(false);
+  }
+  if (event.key !== "Tab") return;
+  const dialog = exitOpen ? exitOverlay : devPanel;
+  const controls = [...dialog.querySelectorAll("a[href], button:not(:disabled)")]
+    .filter((control) => control.getClientRects().length);
+  const boundary = event.shiftKey ? controls[0] : controls.at(-1);
+  if (document.activeElement === boundary) {
+    event.preventDefault();
+    (event.shiftKey ? controls.at(-1) : controls[0]).focus();
+  }
 }
 
 // Отладочные данные поверх экрана: то, что обычно видно только по SSH.
@@ -201,10 +227,13 @@ function showExitDialog() {
   exitMessage.textContent = "Программа сортировки продолжит работать в фоне.";
   exitConfirm.disabled = false;
   exitOverlay.classList.add("active");
+  exitCancel.focus();
 }
 
 function hideExitDialog() {
+  const wasOpen = exitOverlay.classList.contains("active");
   exitOverlay.classList.remove("active");
+  if (wasOpen && !devPanel.hidden) document.getElementById("dev-close-screen").focus();
 }
 
 async function requestKioskExit() {
@@ -491,7 +520,7 @@ function updateUI(data) {
     WAITING_FOR_REMOVAL: "Уберите предмет с площадки",
   };
   systemStatus.textContent =
-    data.manualCapture ? "Ручной сбор · откройте меню для съёмки" :
+    data.manualCapture ? "Ручной сбор датасета" :
     finishing ? "Завершаю сортировку…" :
       statuses[data.controllerState] || "Система запущена";
   document.querySelectorAll(".btn[data-answer]").forEach((btn) => {

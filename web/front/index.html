@@ -101,6 +101,7 @@
     .mqtt-filters .admin-actions { grid-column: 1 / -1; }
     .mqtt-entry summary { cursor: pointer; overflow-wrap: anywhere; }
     .mqtt-entry small { display: block; color: var(--muted); margin-top: 4px; }
+    .mqtt-entry > button { margin-top: 8px; }
     .mqtt-entry pre { padding: 10px; background: var(--bg); max-height: 18rem; overflow: auto;
                      white-space: pre-wrap; overflow-wrap: anywhere; }
     @media (max-width: 1050px) { .layout:has(.device-panel:not([hidden])) .wide { display: none; } }
@@ -161,6 +162,7 @@
           <section class="device-management" data-admin aria-label="Управление устройством" hidden>
             <div class="admin-actions">
               <button id="edit-device" type="button" class="panel-button">Редактировать</button>
+              <button id="device-mqtt" type="button" class="panel-button">Журнал MQTT</button>
               <button id="delete-device" type="button" class="panel-button danger">Удалить</button>
             </div>
             <form id="device-edit-form" class="admin-form" hidden>
@@ -561,6 +563,7 @@
         document.getElementById("summary").innerHTML = cards.map(([value, label]) =>
           `<div class="card"><b>${escape(value)}</b><span>${escape(label)}</span></div>`).join("");
         renderDevices();
+        updateMqttRegistration();
         if (selected) {
           const device = devices.find((item) => item.id === selected.id);
           if (device) renderPanel(device);

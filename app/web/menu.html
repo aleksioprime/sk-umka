@@ -8,15 +8,15 @@
   <link rel="stylesheet" href="/service.css">
 </head>
 <body class="device-menu">
-  <header><h1>Меню устройства</h1><button id="finish">Вернуться к сортировке</button></header>
+  <header><h1 id="menu-title">Меню устройства</h1><button id="finish">Вернуться к сортировке</button></header>
   <main>
-    <section class="card">
+    <section class="card" id="model-card">
       <h2><label for="model">Модель сортировки</label></h2>
       <select id="model"></select>
       <button id="apply">Применить модель</button>
       <p id="model-status" role="status"></p>
     </section>
-    <section class="card">
+    <section class="card" id="capture-card">
       <h2>Ручной сбор датасета</h2>
       <button id="start" class="primary">Приостановить сортировку и начать сбор</button>
       <div id="capture-controls" hidden>
