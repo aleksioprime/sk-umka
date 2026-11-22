@@ -66,7 +66,28 @@ SSH_OPTS=(-o ControlMaster=auto -o "ControlPath=$CONTROL" -o ControlPersist=120)
 [ -n "$SSH_KEY" ] && SSH_OPTS+=(-i "$SSH_KEY")
 [ -n "$SSH_PORT" ] && SSH_OPTS+=(-p "$SSH_PORT")
 SSH_OPTS+=(${EXTRA_OPTS[@]+"${EXTRA_OPTS[@]}"})
-cleanup() { ssh "${SSH_OPTS[@]}" -O exit "$TARGET" >/dev/null 2>&1 || true; }
+RSYNC_SSH=ssh
+for option in "${SSH_OPTS[@]}"; do
+    if [[ "$option" != *"'"* ]]; then
+        RSYNC_SSH+=" '$option'"
+    elif [[ "$option" != *'"'* ]]; then
+        RSYNC_SSH+=" \"$option\""
+    else
+        # Некоторые версии rsync не умеют экранировать кавычки в -e.
+        RSYNC_SSH=""
+        break
+    fi
+done
+RSYNC_TARGET="$TARGET"
+if [[ "${TARGET##*@}" == *:* && "${TARGET##*@}" != \[*\] ]]; then
+    remote_host="${TARGET##*@}"
+    RSYNC_TARGET="${TARGET%"$remote_host"}[$remote_host]"
+fi
+cleanup() {
+    if [ "$DRY_RUN" -eq 0 ]; then
+        ssh "${SSH_OPTS[@]}" -O exit "$TARGET" >/dev/null 2>&1 || true
+    fi
+}
 trap cleanup EXIT
 
 run() {
@@ -84,14 +105,20 @@ if [ "$DRY_RUN" -eq 0 ]; then
     remote 'echo "$(uname -n): $(tr -d "\0" < /proc/device-tree/model 2>/dev/null || uname -m)"'
 fi
 
-# rsync есть почти везде; если нет на устройстве - копирование через tar.
+# Если rsync недоступен на одной из сторон, скопировать файлы через tar.
 sync_dir() {
     local source="$1" target="$2"; shift 2
-    if [ "$DRY_RUN" -eq 1 ] || remote 'command -v rsync >/dev/null'; then
-        run rsync -az --delete -e "ssh ${SSH_OPTS[*]}" "$@" "$source/" "$TARGET:$target/"
+    if [ -n "$RSYNC_SSH" ] && command -v rsync >/dev/null &&
+            { [ "$DRY_RUN" -eq 1 ] || remote 'command -v rsync >/dev/null'; }; then
+        run rsync -az --delete -e "$RSYNC_SSH" "$@" "$source/" "$RSYNC_TARGET:$target/"
     else
         local excludes=()
         for option in "$@"; do excludes+=("${option/--exclude=/--exclude=./}"); done
+        if [ "$DRY_RUN" -eq 1 ]; then
+            run tar -C "$source" ${excludes[@]+"${excludes[@]}"} -czf - .
+            run ssh "${SSH_OPTS[@]}" "$TARGET" "mkdir -p '$target' && tar -C '$target' -xzf -"
+            return
+        fi
         remote "mkdir -p '$target'"
         tar -C "$source" ${excludes[@]+"${excludes[@]}"} -czf - . | remote "tar -C '$target' -xzf -"
     fi
