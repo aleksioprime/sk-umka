@@ -71,6 +71,13 @@ async def _active_user(session, user_id: str) -> User:
     return user
 
 
+async def current_admin(claims: dict = Depends(current_user)) -> None:
+    async with Session() as session:
+        user = await _active_user(session, claims["sub"])
+        if not user.is_admin:
+            raise HTTPException(403, "Требуется роль администратора")
+
+
 @router.post("/login")
 async def login(body: LoginBody) -> dict:
     async with Session() as session:
@@ -106,4 +113,6 @@ async def logout(body: RefreshBody) -> dict:
 
 @router.get("/me")
 async def me(user: dict = Depends(current_user)) -> dict:
-    return {"id": int(user["sub"]), "username": user["username"], "is_admin": user.get("is_admin", False)}
+    async with Session() as session:
+        account = await _active_user(session, user["sub"])
+        return {"id": account.id, "username": account.username, "is_admin": account.is_admin}

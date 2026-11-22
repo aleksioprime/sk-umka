@@ -78,6 +78,31 @@
     .sort-item .yes { color: #86efac; }
     .sort-item .no { color: #fca5a5; }
     .sort-item .unanswered { color: var(--muted); }
+    .admin-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .admin-actions .panel-button { min-height: 38px; }
+    .device-management { margin: 0 0 16px; }
+    .device-management .admin-actions { margin-bottom: 0; }
+    .admin-form { display: grid; gap: 10px; margin-top: 12px; }
+    .admin-form label, .mqtt-filters label { display: grid; gap: 5px; color: var(--muted); font-size: 14px; }
+    .admin-form input, .mqtt-filters :is(input, select) {
+      min-width: 0; width: 100%; min-height: 42px; padding: 8px; color: var(--text); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 8px; font: inherit;
+    }
+    .admin-form .error, .mqtt-dialog .error { min-height: 0; margin: 0; }
+    .danger { color: #fecaca; border-color: #ef44447d; }
+    .admin-dialog { background: #083835; color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+                    padding: 18px; width: min(440px, calc(100vw - 20px)); max-height: calc(100dvh - 20px); }
+    .admin-dialog::backdrop { background: #021817b8; }
+    .admin-dialog h2 { margin: 0; font-size: 20px; }
+    .admin-dialog .panel-header { padding: 0 0 12px; align-items: center; }
+    .admin-dialog .admin-actions { margin-bottom: 0; }
+    .mqtt-dialog { width: min(780px, calc(100vw - 20px)); }
+    .mqtt-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .mqtt-filters .admin-actions { grid-column: 1 / -1; }
+    .mqtt-entry summary { cursor: pointer; overflow-wrap: anywhere; }
+    .mqtt-entry small { display: block; color: var(--muted); margin-top: 4px; }
+    .mqtt-entry pre { padding: 10px; background: var(--bg); max-height: 18rem; overflow: auto;
+                     white-space: pre-wrap; overflow-wrap: anywhere; }
     @media (max-width: 1050px) { .layout:has(.device-panel:not([hidden])) .wide { display: none; } }
     @media (max-width: 780px) {
       .layout:has(.device-panel:not([hidden])) { display: block; }
@@ -107,6 +132,11 @@
   <div class="layout">
     <main id="dashboard" hidden>
       <div class="summary" id="summary"></div>
+      <div class="admin-actions" data-admin hidden>
+        <button id="register-device" type="button" class="panel-button">Добавить устройство</button>
+        <button id="open-mqtt" type="button" class="panel-button">Журнал MQTT</button>
+        <p class="muted" id="admin-result" role="status" hidden></p>
+      </div>
       <table>
         <thead><tr><th>Устройство</th><th>Связь</th><th class="wide">Камера / модель / моторы</th><th>Отсортировано</th></tr></thead>
         <tbody id="devices"></tbody>
@@ -128,6 +158,28 @@
       </nav>
       <div class="panel-body">
         <section id="overview" aria-label="Обзор">
+          <section class="device-management" data-admin aria-label="Управление устройством" hidden>
+            <div class="admin-actions">
+              <button id="edit-device" type="button" class="panel-button">Редактировать</button>
+              <button id="delete-device" type="button" class="panel-button danger">Удалить</button>
+            </div>
+            <form id="device-edit-form" class="admin-form" hidden>
+              <label>Имя устройства<input id="edit-device-name" name="name" required maxlength="128"></label>
+              <p class="error" role="alert" hidden></p>
+              <div class="admin-actions">
+                <button class="panel-button" type="submit">Сохранить имя</button>
+                <button class="panel-button" type="button" data-cancel>Отмена</button>
+              </div>
+            </form>
+            <form id="device-delete-form" class="admin-form" hidden>
+              <span id="delete-device-confirm"></span>
+              <p class="error" role="alert" hidden></p>
+              <div class="admin-actions">
+                <button class="panel-button danger" type="submit">Удалить устройство</button>
+                <button class="panel-button" type="button" data-cancel>Отмена</button>
+              </div>
+            </form>
+          </section>
           <div class="panel-summary" id="device-stats"></div>
           <h3>Счётчики по видам отходов</h3>
           <dl class="detail-list" id="device-types"></dl>
@@ -160,6 +212,50 @@
       </div>
     </aside>
   </div>
+  <dialog id="register-dialog" class="admin-dialog" aria-labelledby="register-title">
+    <div class="panel-header">
+      <h2 id="register-title">Добавить устройство</h2>
+      <button class="panel-button" type="button" data-close>Закрыть</button>
+    </div>
+    <form id="device-register-form" class="admin-form">
+      <label>Идентификатор MQTT
+        <input name="id" placeholder="umka-rpi5" aria-describedby="device-id-hint" pattern="[A-Za-z0-9_\-]+" required maxlength="64" autofocus>
+      </label>
+      <small class="muted" id="device-id-hint">Укажите device_id из файла umka.conf. Латиница, цифры, дефис и подчёркивание.</small>
+      <label>Имя устройства<input name="name" required maxlength="128"></label>
+      <p class="error" role="alert" hidden></p>
+      <div class="admin-actions"><button class="panel-button" type="submit">Добавить</button></div>
+    </form>
+  </dialog>
+  <dialog id="mqtt-dialog" class="admin-dialog mqtt-dialog" aria-labelledby="mqtt-title">
+    <div class="panel-header">
+      <h2 id="mqtt-title">Журнал MQTT</h2>
+      <button class="panel-button" type="button" data-close>Закрыть</button>
+    </div>
+    <form id="mqtt-filters" class="mqtt-filters">
+      <label>Период
+        <select name="hours">
+          <option value="1">Последний час</option><option selected value="24">Последние сутки</option>
+          <option value="168">7 дней</option><option value="0">Всё время</option>
+        </select>
+      </label>
+      <label>Результат
+        <select name="result">
+          <option value="">Любой</option>
+          <option value="accepted">Принято</option><option value="unregistered">Устройство не зарегистрировано</option>
+          <option value="invalid">Некорректное сообщение</option><option value="unsupported">Неподдерживаемый топик</option>
+          <option value="duplicate">Повтор события</option>
+        </select>
+      </label>
+      <label>Идентификатор устройства<input name="device_id" placeholder="umka-rpi5" maxlength="256"></label>
+      <label>Топик содержит<input name="topic" placeholder="/status" maxlength="256"></label>
+      <div class="admin-actions"><button class="panel-button" type="submit">Показать сообщения</button></div>
+    </form>
+    <p id="mqtt-message" class="muted" role="status"></p>
+    <ol id="mqtt-list" class="sort-list"></ol>
+    <button type="button" id="mqtt-more" class="panel-button" hidden>Показать ещё</button>
+  </dialog>
+  <script src="/admin.js"></script>
   <script>
     const TYPES = { paper: "Бумага", plastic_aluminum: "Пластик/алюминий", organic: "Органика", non_recyclable: "Несортируемые" };
     const SORT_STATES = {
@@ -180,6 +276,7 @@
     let selected = null;
     let journalVersion = 0;
     let listMarkup = "";
+    let refreshVersion = 0;
     const mobile = matchMedia("(max-width: 780px)");
     const panel = $("device-panel");
     const tokens = {
@@ -203,17 +300,26 @@
       return true;
     }
 
-    async function api(path) {
-      const call = () => fetch(path, { headers: { Authorization: `Bearer ${tokens.access}` } });
+    async function api(path, method = "GET", body) {
+      const call = () => fetch(path, {
+        method, cache: "no-store", body: body === undefined ? undefined : JSON.stringify(body),
+        headers: { Authorization: `Bearer ${tokens.access}`, "Content-Type": "application/json" },
+      });
       let response = await call();
       if (response.status === 401 && await renewAccess()) response = await call();
       if (response.status === 401) { showLogin(); throw new Error("Нужен вход"); }
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(typeof error.detail === "string" ? error.detail : `HTTP ${response.status}`);
+      }
+      if (response.status === 204) return;
       return response.json();
     }
 
     function showLogin(message = "") {
       closePanel(false);
+      setAdmin(false);
+      refreshVersion++;
       devices = [];
       listMarkup = "";
       $("devices").replaceChildren();
@@ -232,6 +338,7 @@
       try {
         const me = await api("/api/auth/me");
         $("logout").textContent = `Выйти (${me.username})`;
+        setAdmin(me.is_admin);
       } catch (error) { return; }
       refresh();
     }
@@ -271,7 +378,7 @@
             <br><span class="muted">${escape(time(device.lastSeen))}</span></td>
           <td class="wide">${ok(status.camera)} / ${ok(status.model)} / ${ok(status.hardware)} ${escape(status.hardware?.driver || "")}</td>
           <td>${escape(status.stats?.total_items ?? "—")}</td></tr>`;
-      }).join("") : `<tr><td colspan="4" class="muted">Устройства ещё не присылали данных</td></tr>`;
+      }).join("") : `<tr><td colspan="4" class="muted">Зарегистрированных устройств пока нет</td></tr>`;
       if (markup !== listMarkup) {
         const focused = document.activeElement.closest("tr[data-device]")?.dataset.device;
         $("devices").innerHTML = listMarkup = markup;
@@ -345,6 +452,7 @@
       const device = devices.find((item) => item.id === id);
       if (!device || selected?.id === id) return;
       selected = { id, total: null };
+      resetDeviceManagement();
       for (const select of $("journal-filters").querySelectorAll("select")) select.selectedIndex = 0;
       showSection("overview");
       panel.hidden = false;
@@ -359,6 +467,7 @@
       if (!selected) return;
       const id = selected.id;
       selected = null;
+      resetDeviceManagement();
       journalVersion++;
       panel.hidden = true;
       setPanelLayout();
@@ -419,9 +528,10 @@
     });
     $("device-close").addEventListener("click", () => closePanel());
     document.addEventListener("keydown", (event) => {
+      if (event.target.closest("dialog[open]")) return;
       if (event.key === "Escape" && selected) closePanel();
       if (event.key !== "Tab" || !selected || !mobile.matches) return;
-      const controls = [...panel.querySelectorAll("button:not(:disabled), select")].filter((item) => item.getClientRects().length);
+      const controls = [...panel.querySelectorAll("button:not(:disabled), select, input")].filter((item) => item.getClientRects().length);
       const first = controls[0];
       const last = controls.at(-1);
       if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
@@ -440,9 +550,10 @@
 
     async function refresh() {
       if ($("dashboard").hidden) return;
+      const version = ++refreshVersion;
       try {
         const [items, summary] = await Promise.all([api("/api/devices"), api("/api/summary")]);
-        if ($("dashboard").hidden) return;
+        if (version !== refreshVersion) return;
         devices = items;
         const online = devices.filter((d) => d.online).length;
         const cards = [[summary.devices, "устройств"], [online, "на связи"],
@@ -457,9 +568,10 @@
         }
         document.getElementById("updated").textContent = `обновлено ${new Date().toLocaleTimeString("ru-RU")}`;
       } catch (error) {
-        if (!$("dashboard").hidden) $("updated").textContent = "нет связи с сервером";
+        if (version === refreshVersion) $("updated").textContent = "нет связи с сервером";
       }
     }
+    setupAdmin();
     if (tokens.refresh) showDashboard(); else showLogin();
     setInterval(refresh, 10000);
   </script>

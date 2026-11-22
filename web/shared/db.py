@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, LargeBinary, String, Text, UniqueConstraint, func, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -18,7 +18,7 @@ class Base(DeclarativeBase):
 
 
 class Device(Base):
-    """Устройство UMKA; создаётся при первом сообщении от него."""
+    """Устройство, зарегистрированное в мониторинге."""
 
     __tablename__ = "devices"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -26,6 +26,22 @@ class Device(Base):
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Последний статус целиком: камера, модель, моторы, статистика.
     status: Mapped[dict | None] = mapped_column(JSON)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class MqttMessage(Base):
+    """Сообщение, полученное worker по настроенной подписке MQTT."""
+
+    __tablename__ = "mqtt_messages"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    topic: Mapped[str] = mapped_column(Text)
+    device_id: Mapped[str | None] = mapped_column(Text, index=True)
+    result: Mapped[str] = mapped_column(String(24), index=True)
+    qos: Mapped[int]
+    retained: Mapped[bool]
+    payload: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class Event(Base):
@@ -64,6 +80,9 @@ class RevokedToken(Base):
 
 
 async def create_tables() -> None:
-    """Создать таблицы, если их нет. Позже заменить миграциями Alembic."""
+    """Обновить схему при запуске backend и worker."""
     async with engine.begin() as connection:
+        # Контейнеры запускаются параллельно. DDL должен выполняться по очереди.
+        await connection.execute(text("SELECT pg_advisory_xact_lock(24491, 1)"))
         await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(text("ALTER TABLE devices ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ"))
