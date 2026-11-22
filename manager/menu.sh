@@ -169,6 +169,63 @@ device_logs() {
     '
 }
 
+mqtt_setting() {
+    local value
+    printf '%s [%s]: ' "$1" "${2:-обязательно}" >&2
+    IFS= read -r value || return 1
+    printf '%s' "${value:-$2}"
+}
+
+configure_monitoring() (
+    # Даже при запуске через bash -x пароль не должен появляться в выводе.
+    set +x
+    local helper command metadata current_id current_host current_port current_tls current_user has_password
+    local mqtt_id mqtt_host mqtt_port mqtt_tls mqtt_user mqtt_password
+    helper=$(<"$SCRIPT_DIR/monitoring.py") || return 1
+    # Исходный код передаётся отдельно от настроек, которые идут через stdin.
+    helper=${helper//\'/\'\\\'\'}
+    command='if [ ! -x "$HOME/app/.venv/bin/python" ]; then
+        printf "Сначала установите УМКУ и окружение через пункт 1.\n" >&2
+        exit 1
+    fi
+    cd "$HOME/app" && .venv/bin/python -B -c'
+    command+=" '$helper'"
+    metadata=$(ssh "${ssh_options[@]}" -n -T "$target" "$command show") || return 1
+    {
+        IFS= read -r current_id
+        IFS= read -r current_host
+        IFS= read -r current_port
+        IFS= read -r current_tls
+        IFS= read -r current_user
+        IFS= read -r has_password
+    } <<< "$metadata"
+    if [[ $has_password != yes && $has_password != no ]]; then
+        printf 'Не удалось прочитать параметры MQTT с платы.\n' >&2
+        return 1
+    fi
+
+    printf 'Укажите постоянный ID устройства, например rpi-classroom-01.\n'
+    mqtt_id=$(mqtt_setting "ID устройства" "$current_id") || return 0
+    mqtt_host=$(mqtt_setting "Адрес брокера MQTT" "$current_host") || return 0
+    mqtt_port=$(mqtt_setting "Порт MQTT" "$current_port") || return 0
+    mqtt_tls=$(mqtt_setting "TLS (yes/no)" "$current_tls") || return 0
+    mqtt_user=$(mqtt_setting "Логин MQTT" "$current_user") || return 0
+    if [[ $has_password == yes ]]; then
+        printf 'Пароль MQTT (Enter — сохранить при прежних параметрах подключения): '
+    else
+        printf 'Пароль MQTT: '
+    fi
+    IFS= read -r -s mqtt_password || { printf '\n'; return 0; }
+    printf '\n'
+    printf '%s\n' "$mqtt_id" "$mqtt_host" "$mqtt_port" "$mqtt_tls" "$mqtt_user" "$mqtt_password" |
+        ssh "${ssh_options[@]}" -T "$target" "$command apply" || return 1
+    printf 'Параметры сохранены в umka.conf.\n'
+    if ! service_command restart; then
+        printf 'Перезапустите УМКУ вручную, чтобы применить сохранённые параметры.\n' >&2
+    fi
+    printf 'Добавьте ID %s на сайте https://umka.technocrew.ru/, если его ещё нет в списке.\n' "$mqtt_id"
+)
+
 run_action() {
     printf '\n'
     if ! "$@"; then
@@ -187,6 +244,7 @@ menu() {
     printf '  6  Проверить плату и состояние\n'
     printf '  7  Посмотреть журнал\n'
     printf '  8  Выбрать другую плату\n'
+    printf '  9  Подключить к мониторингу\n'
     printf '  0  Выйти\n\n'
     printf 'Выберите действие: '
 }
@@ -207,6 +265,7 @@ while true; do
         6) run_action device_status ;;
         7) run_action device_logs ;;
         8) if select_device; then set_connection; fi ;;
+        9) run_action configure_monitoring ;;
         0) break ;;
         *) printf 'Введите номер пункта меню.\n' ;;
     esac
